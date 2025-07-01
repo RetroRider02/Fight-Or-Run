@@ -1,5 +1,7 @@
 # Fight or Run - ThreeJS Project
 
+![fight_screenshot1](https://github.com/user-attachments/assets/4714e390-7fcd-468a-a2fb-c8c96beaf57c)
+
 ## Quick Start Guide
 
 ### Necessary tools
