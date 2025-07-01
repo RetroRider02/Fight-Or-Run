@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="hu">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Fight or Run - ThreeJS Project</title>
+    <link rel="stylesheet" href="./styles/style.css">
+</head>
+
+<body>
+    <div id="info">
+        <p id="infopanel">Bordás Dániel<br>Gazdaságinfomatikus BSc<br>2023/24-1</p>
+    </div>
+
+    <script async src="./dist/es-module-shims.js"></script>
+    <script type="importmap">
+    {
+    "imports": {
+        "three": "./js-r154/build/three.module.js",
+        "OrbitControls": "./js-r154/examples/jsm/controls/OrbitControls.js",
+        "lil-gui": "./js-r154/examples/jsm/libs/lil-gui.module.min.js",
+        "OBJLoader": "./js-r154/examples/jsm/loaders/OBJLoader.js",
+        "MTLLoader": "./js-r154/examples/jsm/loaders/MTLLoader.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'OrbitControls';
+        import { GUI } from 'lil-gui';
+        import { OBJLoader } from 'OBJLoader';
+        import { MTLLoader } from 'MTLLoader';
+
+        let WIDTH, HEIGHT, aspectRatio;
+        let renderer;
+        let scene, camera;
+        let controls;
+
+        let groundMesh;
+
+        let gui;
+        let controller;
+
+        let spotLight;
+        let spotLight2;
+        let ambientLight;
+
+        let pointLight = [];
+        let pointGlobe = [];
+
+        const keysPressed = {};
+
+        let helpGeometry = new THREE.BoxGeometry(0, 0, 0);
+        let helpMaterial = new THREE.MeshBasicMaterial();
+        let helpMesh = new THREE.Mesh(helpGeometry, helpMaterial);
+        helpMesh.position.set(-80, 0, 16);    //-80, 0, 15.5
+
+        let helpGeometry2 = new THREE.BoxGeometry(0, 0, 0);
+        let helpMaterial2 = new THREE.MeshBasicMaterial();
+        let helpMesh2 = new THREE.Mesh(helpGeometry2, helpMaterial2);
+        helpMesh2.position.set(0, 0, 0);
+
+        let helpGeometry3 = new THREE.BoxGeometry(0, 0, 0);
+        let helpMaterial3 = new THREE.MeshBasicMaterial();
+        let helpMesh3 = new THREE.Mesh(helpGeometry3, helpMaterial3);
+        helpMesh3.position.set(0, 0, 0);
+
+        const textureLoader = new THREE.TextureLoader();
+
+        const snowTexture = textureLoader.load('./textures/snow.jpg');
+        const barkTexture = textureLoader.load('./textures/bark.jpg');
+        const leafTexture = textureLoader.load('./textures/leaf.jpg');
+        const rockTexture = textureLoader.load('./textures/rock.jpg');
+        const plankTexture = textureLoader.load('./textures/planks.jpg');
+
+        const night = textureLoader.load('./textures/night.jpg');
+        const morning = textureLoader.load('./textures/morning.webp');
+        const afternoon = textureLoader.load('./textures/afternoon.webp');
+
+        loader();
+
+        function loader() {
+
+            const models = [
+                { id: 'tank1', obj: './objects/tank.obj', mtl: './objects/tank.mtl', position: [100, 0, 100], rotationY: -135 },
+                { id: 'tank2', obj: './objects/tank.obj', mtl: './objects/tank.mtl', position: [143, 0, 150], rotationY: 45 },
+                { id: 'tank3', obj: './objects/tank2.obj', mtl: './objects/tank2.mtl', position: [-225, 0, 250], rotationY: 45 },
+                { id: 'truck1', obj: './objects/truck.obj', mtl: './objects/truck.mtl', position: [100, 0, 100], rotationY: -135 },
+                { id: 'truck2', obj: './objects/truck.obj', mtl: './objects/truck.mtl', position: [-170, 0, -190], rotationY: -135 },
+                { id: 'truck3', obj: './objects/truck.obj', mtl: './objects/truck.mtl', position: [-240, 0, 50], rotationY: -90 }
+            ];
+
+            models.forEach(model => {
+                let mtlLoader = new MTLLoader();
+                mtlLoader.load(model.mtl, function (materials) {
+                    let objLoader = new OBJLoader();
+                    objLoader.setMaterials(materials).load(model.obj, function (object) {
+                        object.position.set(...model.position);
+                        object.rotation.y = THREE.MathUtils.degToRad(model.rotationY);
+                        object.traverse(function (child) {
+                            if (child instanceof THREE.Mesh) {
+                                child.castShadow = true;
+                                child.receiveShadow = true;
+                            }
+                            switch (model.id) {
+                                case 'tank1': object.scale.set(6.25, 6.25, 5.25); helpMesh2.add(object); scene.add(helpMesh2); break;
+                                case 'tank2': object.scale.set(6.25, 6.25, 5.25); helpMesh3.add(object); scene.add(helpMesh3); break;
+                                case 'tank3': object.scale.set(5.25, 6, 4.75); scene.add(object); break;
+                                case 'truck1': object.scale.set(7, 7, 7); helpMesh.add(object); scene.add(helpMesh); break;
+                                case 'truck2': object.scale.set(7, 7, 7); scene.add(object); break;
+                                case 'truck3': object.scale.set(7, 7, 7); scene.add(object); break;
+                            }
+                        });
+                    });
+                });
+            });
+
+            init();
+        }
+
+        function placeControlGui(gui) {
+            gui.domElement.style.position = 'absolute';
+            gui.domElement.style.top = '30px';
+            gui.domElement.style.right = '30px';
+            gui.domElement.style.zIndex = '10';
+            document.body.appendChild(gui.domElement);
+        }
+
+        function MaterialController() {
+            this.ambient = false;
+            this.spot = false;
+            this.point = true;
+        }
+
+        function addControlGui(controlObject) {
+            gui = new GUI({ autoPlace: false, width: 140 });
+
+            gui.add(controlObject, 'spot', 'ambient').name('Afternoon').onChange(function (e) {
+                if (e) {
+                    scene.background = afternoon;
+                    scene.add(ambientLight);
+                    scene.add(spotLight);
+                } else {
+                    scene.background = null;
+                    scene.remove(spotLight);
+                    scene.remove(ambientLight);
+                }
+            });
+
+            gui.add(controlObject, 'point').name('Evening').onChange(function (e) {
+                if (e) {
+                    scene.background = night;
+                    pointLight.forEach(x => {
+                        scene.add(x);
+                    });
+                } else {
+                    scene.background = null;
+                    pointLight.forEach(x => {
+                        scene.remove(x);
+                    });
+                }
+            });
+
+            gui.add(controlObject, 'spot', 'ambient').name('Morning').onChange(function (e) {
+                if (e) {
+                    scene.background = morning;
+                    scene.add(ambientLight);
+                    scene.add(spotLight2);
+                } else {
+                    scene.background = null;
+                    scene.remove(spotLight2);
+                    scene.remove(ambientLight);
+                }
+            });
+            placeControlGui(gui);
+        }
+
+        function init() {
+
+            // Böngésző ablakméret lekérése és méretarány számítása
+            HEIGHT = window.innerHeight;
+            WIDTH = window.innerWidth;
+            aspectRatio = WIDTH / HEIGHT;
+
+            // Renderer létrehozása és DOM-hoz adása
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(WIDTH, HEIGHT);
+            renderer.setClearColor(0x000000);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Színtér létrehozása
+            scene = new THREE.Scene();
+            scene.background = night;
+
+            // Kamera létrehozása és vetítési paramétereinek beállítása
+            camera = new THREE.PerspectiveCamera(90, aspectRatio, 1, 2000);
+            camera.position.set(-235, 15, 280);
+            scene.add(camera);
+
+            // Főbb fényforrások létrehozása
+            ambientLight = new THREE.AmbientLight(0xF3F3F3, 0.15);
+
+            spotLight = new THREE.SpotLight(0xFFEAAD, 3.75);
+            spotLight.position.set(-800, 50, 800);
+            spotLight.angle = Math.PI / 10;
+            spotLight.penumbra = 0.75;
+            spotLight.castShadow = true;
+            spotLight.shadow.camera.far = 2000;
+            spotLight.shadow.mapSize.width = 2048;
+            spotLight.shadow.mapSize.height = 2048;
+
+            spotLight2 = new THREE.SpotLight(0xFFEAAD, 3);
+            spotLight2.position.set(800, 35, -800);
+            spotLight2.angle = Math.PI / 10;
+            spotLight2.penumbra = 0.75;
+            spotLight2.castShadow = true;
+            spotLight2.shadow.camera.far = 2000;
+            spotLight2.shadow.mapSize.width = 2048;
+            spotLight2.shadow.mapSize.height = 2048;
+
+            // Talaj
+            let groundGeometry = new THREE.PlaneGeometry(600, 750);
+            let groundMaterial = new THREE.MeshPhongMaterial({
+                color: 0xa0adaf,
+                side: THREE.FrontSide,
+                wireframe: false
+            });
+
+            groundMaterial.map = snowTexture;
+            groundMaterial.bumpMap = snowTexture;
+            groundMaterial.bumpScale = 0.75;
+
+            groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+            groundMesh.rotation.x = -1.0 * THREE.MathUtils.degToRad(90);
+            groundMesh.castShadow = false;
+            groundMesh.receiveShadow = true;
+            scene.add(groundMesh);
+
+            createTrees();
+            createLamps();
+            createHouses();
+
+            window.addEventListener('resize', handleWindowResize, false);
+            window.addEventListener('keydown', (event) => {
+                keysPressed[event.key.toLowerCase()] = true;
+            });
+
+            window.addEventListener('keyup', (event) => {
+                keysPressed[event.key.toLowerCase()] = false;
+            });
+
+            // Kontroller példányosítása
+            controller = new MaterialController();
+            addControlGui(controller);
+
+            // Kamera vezérlés
+            controls = new OrbitControls(camera, renderer.domElement);
+
+            animate();
+        }
+
+        function createParts({ size, color, position, scale, rotationX = 0, materialOptions = {} }) {
+            const geometry = new THREE.BoxGeometry(...size);
+            const material = new THREE.MeshPhongMaterial({ color, ...materialOptions });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(...position);
+
+            if (scale) {
+                mesh.scale.set(...scale);
+            }
+            if (rotationX) {
+                mesh.rotation.x = THREE.MathUtils.degToRad(rotationX);
+            }
+
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            return mesh;
+        }
+
+        function createHouses() {
+
+            const houses = [];
+            let zPos = 300;
+
+            for (let i = 0; i < 12; i++) {
+                const xPos = (i % 2 === 0) ? -175 : -250;
+                zPos -= 50;
+
+                const houseBase = createParts({
+                    size: [15, 12, 10],
+                    color: 0x3C2002,
+                    position: [xPos, 6, zPos],
+                    scale: [1.5, 1, 1.5],
+                    materialOptions: {
+                        shininess: 20,
+                        specular: 0x111111,
+                        map: plankTexture,
+                        bumpMap: plankTexture,
+                        bumpScale: 1
+                    }
+                });
+
+                const houseBaseObj = new THREE.Object3D();
+                houseBaseObj.add(houseBase);
+                scene.add(houseBaseObj);
+
+                const door = createParts({
+                    size: [2.25, 7, 0.25],
+                    color: 0x3C2002,
+                    position: [xPos, 5.5, zPos + 7.35],
+                    scale: [1.5, 1, 1.5],
+                });
+
+                const doorObj = new THREE.Object3D();
+                doorObj.add(door);
+                scene.add(doorObj);
+
+                const windowsPositions = [
+                    { position: [xPos + 11, 7.5, zPos - 3], size: [0.75, 3.5, 3.5] },
+                    { position: [xPos + 11, 7.5, zPos + 3], size: [0.75, 3.5, 3.5] },
+                    { position: [xPos - 6, 7.5, zPos - 7.25], size: [3.5, 3.5, 0.75] },
+                    { position: [xPos - 6, 7.5, zPos + 7.25], size: [3.5, 3.5, 0.75] }
+                ];
+
+                windowsPositions.forEach(x => {
+                    const glowingMaterial = new THREE.MeshStandardMaterial({
+                        color: 0x222222,
+                        emissive: 0xffaa00,
+                        emissiveIntensity: 0.5,
+                    });
+
+                    let windowLight = new THREE.Mesh(new THREE.BoxGeometry(...x.size), glowingMaterial);
+                    windowLight.position.set(...x.position);
+                    scene.add(windowLight);
+                });
+
+                const roof = createParts({
+                    size: [14.9, 12, 8],
+                    color: 0xc2c2c2,
+                    position: [xPos, 12.5, zPos],
+                    scale: [1.5, 1, 1.5],
+                    rotationX: 45,
+                    materialOptions: {
+                        shininess: 20,
+                        specular: 0x111111
+                    }
+                });
+
+                const roofObj = new THREE.Object3D();
+                roofObj.add(roof);
+                scene.add(roofObj);
+
+                const chimney = createParts({
+                    size: [1, 10, 1],
+                    color: 0x3C2002,
+                    position: [xPos + 5, 18, zPos + 3],
+                    scale: [1.5, 1, 1.5],
+                    materialOptions: {
+                        shininess: 20,
+                        specular: 0x111111
+                    }
+                });
+
+                const chimneyObj = new THREE.Object3D();
+                chimneyObj.add(chimney);
+                scene.add(chimneyObj);
+
+                const veranda = createParts({
+                    size: [20, 2, 10],
+                    color: 0x9A9278,
+                    position: [xPos, 1, zPos + 10],
+                    scale: [1, 1, 1],
+                    materialOptions: {
+                        shininess: 20,
+                        specular: 0x111111,
+                        map: rockTexture,
+                        bumpMap: rockTexture,
+                        bumpScale: 0.5
+                    }
+                });
+
+                const verandaObj = new THREE.Object3D();
+                verandaObj.add(veranda);
+                scene.add(verandaObj);
+
+                const verandaRoof = createParts({
+                    size: [20, 1, 10],
+                    color: 0xc2c2c2,
+                    position: [xPos, 11.5, zPos + 10],
+                    scale: [1, 1, 1],
+                    rotationX: 15,
+                    materialOptions: {
+                        shininess: 20,
+                        specular: 0x111111
+                    }
+                });
+
+                const verandaRoofObj = new THREE.Object3D();
+                verandaRoofObj.add(verandaRoof);
+                scene.add(verandaRoofObj);
+
+                const columnPositions = [
+                    [xPos + 7, 5, zPos + 14],
+                    [xPos - 7, 5, zPos + 14]
+                ];
+
+                columnPositions.forEach(pos => {
+                    const column = createParts({
+                        size: [0.5, 10, 0.5],
+                        color: 0x3C2002,
+                        position: pos,
+                        materialOptions: {
+                            shininess: 20,
+                            specular: 0x111111,
+                            map: barkTexture,
+                            bumpMap: barkTexture,
+                            bumpScale: 0.5
+                        }
+                    });
+
+                    const columnObj = new THREE.Object3D();
+                    columnObj.add(column);
+                    scene.add(columnObj);
+                });
+            }
+        }
+
+        function createLamps() {
+
+            let poleGeometry = null;
+            let poleMaterial = null;
+            let poleMesh = null;
+
+            for (var i = 0; i < 5; i++) {
+                poleGeometry = new THREE.BoxGeometry(0.5, 25, 0.5);
+                poleMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x3C2002,
+                    shininess: 80,
+                    specular: 0x111111,
+                    wireframe: false
+                });
+
+                poleMaterial.map = barkTexture;
+                poleMaterial.bumpMap = barkTexture;
+                poleMaterial.bumpScale = 0.5;
+
+                poleMesh = new THREE.Mesh(poleGeometry, poleMaterial);
+                poleMesh.position.set(-230, 10, -200 + (i * 100));
+                poleMesh.scale.x = 0.75;
+                poleMesh.scale.z = 0.75;
+                poleMesh.castShadow = true;
+                poleMesh.receiveShadow = true;
+
+                scene.add(poleMesh);
+
+                pointLight[i] = new THREE.PointLight(0xffffff, 1, 100);;
+                pointLight[i].position.set(-230, 23, -200 + (i * 100));
+
+                scene.add(pointLight[i]);
+
+                const glowingMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x222222,
+                    emissive: 0xffaa00,
+                    emissiveIntensity: 1,
+                });
+
+                pointGlobe[i] = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), glowingMaterial);
+                pointGlobe[i].position.set(-230, 23, -200 + (i * 100));
+                scene.add(pointGlobe[i]);
+            }
+        }
+
+        function createTrees() {
+
+            let positionZ = 300;
+            let xOffset = 0;
+
+            let boxGeometry = null;
+            let boxMaterial = null;
+            let boxMesh = null;
+
+            let coneGeometry = null;
+            let coneMaterial = null;
+            let coneMesh = null;
+
+            let tree = new THREE.Object3D();;
+
+            for (let i = 0; i < 35; i++) {
+                positionZ -= 10 + Math.random() * 15;
+                xOffset = 50 + (Math.random() - 0.5) * 400;
+
+                boxGeometry = new THREE.BoxGeometry(1, 8, 1);
+                boxMaterial = new THREE.MeshPhongMaterial({ color: 0x783F04, shininess: 80, specular: 0x111111 });
+                boxMaterial.map = barkTexture;
+                boxMaterial.bumpMap = barkTexture;
+                boxMaterial.bumpScale = 0.75;
+                boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
+                boxMesh.position.set(xOffset, 4, positionZ);
+                boxMesh.scale.set(1.5, 1, 1.5);
+                boxMesh.castShadow = true;
+                boxMesh.receiveShadow = true;
+
+                coneGeometry = new THREE.ConeGeometry(3, 10);
+                coneMaterial = new THREE.MeshPhongMaterial({ color: 0x93C47D, shininess: 80, specular: 0x111111 });
+                coneMaterial.map = leafTexture;
+                coneMaterial.bumpMap = leafTexture;
+                coneMaterial.bumpScale = 0.5;
+                coneMesh = new THREE.Mesh(coneGeometry, coneMaterial);
+                coneMesh.position.set(xOffset, 13, positionZ);
+                coneMesh.scale.set(1.85, 1.25, 1.7);
+                coneMesh.castShadow = true;
+                coneMesh.receiveShadow = true;
+
+                tree.add(boxMesh);
+                tree.add(coneMesh);
+                tree.scale.y = 2;
+
+                scene.add(tree);
+            }
+        }
+
+        function handleWindowResize() {
+            HEIGHT = window.innerHeight;
+            WIDTH = window.innerWidth;
+
+            renderer.setSize(WIDTH, HEIGHT);
+            aspectRatio = WIDTH / HEIGHT;
+            camera.aspect = aspectRatio;
+            camera.updateProjectionMatrix();
+
+            placeControlGui(gui);
+            render();
+        }
+
+        function tankAnimation() {
+            helpMesh2.rotation.y -= 0.0015;
+            helpMesh3.rotation.y += 0.0010;
+        }
+
+        function carAnimation() {
+            helpMesh.rotation.y -= 0.0020;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            const speed = 0.2;
+
+            if (keysPressed['w']) camera.position.z -= speed;
+            if (keysPressed['s']) camera.position.z += speed;
+            if (keysPressed['a']) camera.position.x -= speed;
+            if (keysPressed['d']) camera.position.x += speed;
+
+            tankAnimation();
+            carAnimation();
+
+            render();
+        }
+
+        function render() {
+            renderer.render(scene, camera);
+        }
+
+    </script>
+
+</body>
+
+</html>
